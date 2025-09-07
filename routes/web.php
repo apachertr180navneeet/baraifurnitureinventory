@@ -8,6 +8,10 @@ use App\Http\Controllers\Admin\ContactController;
 use App\Http\Controllers\Admin\NotificationController;
 use App\Http\Controllers\Admin\AdminUserController;
 
+use App\Http\Controllers\Company\{
+    CategoryController,
+};
+
 /*
 |--------------------------------------------------------------------------
 | Web Routes
@@ -50,6 +54,20 @@ Route::name('admin.')->prefix('admin')->group(function () {
         Route::get('profile', [AdminAuthController::class, 'adminProfile'])->name('profile');
 
         Route::post('profile', [AdminAuthController::class, 'updateAdminProfile'])->name('update.profile');
+
+
+        foreach (['category'] as $resource) {
+            Route::prefix($resource)->name("$resource.")->group(function () use ($resource) {
+                $controller = "App\Http\Controllers\Admin\\" . ucfirst($resource) . "Controller";
+                Route::get('/', [$controller, 'index'])->name('index');
+                Route::get('all', [$controller, 'getall'])->name('getall');
+                Route::post('store', [$controller, 'store'])->name('store');
+                Route::post('status', [$controller, 'status'])->name('status');
+                Route::delete('delete/{id}', [$controller, 'destroy'])->name('destroy');
+                Route::get('get/{id}', [$controller, 'get'])->name('get');
+                Route::post('update', [$controller, 'update'])->name('update');
+            });
+        }
     });
 
 });
