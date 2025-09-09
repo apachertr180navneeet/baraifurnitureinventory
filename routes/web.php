@@ -11,6 +11,9 @@ use App\Http\Controllers\Admin\AdminUserController;
 use App\Http\Controllers\Company\{
     CategoryController,
     ItemController,
+    StockInController,
+    StockOutController,
+    VendorController,
 };
 
 /*
@@ -57,7 +60,7 @@ Route::name('admin.')->prefix('admin')->group(function () {
         Route::post('profile', [AdminAuthController::class, 'updateAdminProfile'])->name('update.profile');
 
 
-        foreach (['category', 'item'] as $resource) {
+        foreach (['category', 'item','stockIn','stockOut','vendor'] as $resource) {
             Route::prefix($resource)->name("$resource.")->group(function () use ($resource) {
                 $controller = "App\Http\Controllers\Admin\\" . ucfirst($resource) . "Controller";
                 Route::get('/', [$controller, 'index'])->name('index');
