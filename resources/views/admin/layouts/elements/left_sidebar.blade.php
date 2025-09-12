@@ -34,6 +34,7 @@
 			['route' => 'admin.stockIn.index', 'text' => 'Stock In'],
 			['route' => 'admin.stockOut.index', 'text' => 'Stock Out'],
 			['route' => 'admin.attendance.index', 'text' => 'Attendance'],
+			['route' => 'admin.machine.index', 'text' => 'Machine'],
 		] as $mastermenu)
 			<li class="menu-item {{ request()->routeIs($mastermenu['route']) ? 'active' : '' }}">
 				<a href="{{ route($mastermenu['route']) }}" class="menu-link">
