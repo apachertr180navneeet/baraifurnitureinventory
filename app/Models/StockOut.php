@@ -6,18 +6,23 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-class StockIn extends Model
+class StockOut extends Model
 {
     use HasFactory, SoftDeletes;
 
-    protected $table = 'stockins';
+    protected $table = 'stockouts';
 
-    protected $fillable = ['date', 'vendor_id', 'status'];
+    protected $fillable = ['date', 'customer_id', 'status'];
 
     // StockIn belongs to a Vendor
     public function vendor()
     {
         return $this->belongsTo(Vendor::class);
+    }
+
+    public function customer()
+    {
+        return $this->belongsTo(Customer::class);
     }
 
     // StockIn has many StockInItems
@@ -26,14 +31,8 @@ class StockIn extends Model
         return $this->hasMany(StockInItem::class, 'stock_in_id');
     }
 
-    public function stockInItems()
+    public function stockOutItems()
     {
-        return $this->hasMany(StockInItem::class, 'stock_in_id');
-    }
-
-    // Relation with Item
-    public function item()
-    {
-        return $this->belongsTo(Item::class, 'item_id');
+        return $this->hasMany(StockOutItem::class, 'stock_out_id');
     }
 }

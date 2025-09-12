@@ -52,7 +52,12 @@ class StockInController extends Controller
             }
         }
 
-        return response()->json(['data' => $data]);
+        return response()->json([
+            'draw'            => intval($request->draw), // required by DataTables
+            'recordsTotal'    => count($data),           // total rows before filtering
+            'recordsFiltered' => count($data),           // total rows after filtering
+            'data'            => $data                   // actual table data
+        ]);
     }
 
     public function store(Request $request)

@@ -3,88 +3,221 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\StockOut;
-use App\Models\StockMaster;
+use App\Models\{
+    StockOut,
+    Item,
+    Customer,
+    StockOutItem,
+};
 use Illuminate\Http\Request;
+
+use Illuminate\Support\Facades\DB;
 
 class StockOutController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        $stockOut = StockOut::with('item')->latest()->paginate(10);
-        return view('admin.stock_out.index', compact('stockOut'));
+        $customers = Customer::where('status', 1)->get();
+        $items = Item::where('status', 1)->get();
+        return view('admin.stock_out.index', compact('customers', 'items'));
     }
 
-    public function create()
+    /**
+     * Fetch all Stock In records with items and return as JSON.
+     *
+     * @param \Illuminate\Http\Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getAll(Request $request)
     {
-        $items = StockMaster::all();
-        return view('admin.stock_out.create', compact('items'));
+        $stockOuts = StockOut::with(['customer', 'stockOutItems.item'])
+            ->orderBy('id', 'desc')
+            ->get();
+
+        $data = [];
+
+        foreach ($stockOuts as $stockOut) {
+            foreach ($stockOut->stockOutItems as $item) {
+                $data[] = [
+                    'id'          => $stockOut->id,
+                    'customer_name'=> $stockOut->customer ? $stockOut->customer->name : '-',
+                    'item_name'   => $item->item ? $item->item->name : '-',
+                    'rate'        => number_format($item->price, 2),
+                    'qty'         => $item->qty,
+                    'total_amount'=> number_format($item->total, 2),
+                    'status'      => $stockOut->status,
+                    'action'      => '',
+                ];
+            }
+        }
+
+        return response()->json([
+            "draw" => intval($request->input('draw')),
+            "recordsTotal" => count($data),
+            "recordsFiltered" => count($data),
+            "data" => $data
+        ]);
     }
 
     public function store(Request $request)
     {
-        $request->validate([
-            'item_id' => 'required|exists:stock_master,id',
-            'customer_name' => 'required|string|max:255',
-            'rate' => 'required|numeric|min:0',
-            'qty' => 'required|integer|min:1',
-        ]);
+        DB::beginTransaction();
+        try {
+            // ✅ Save StockOut first
+            $stockOut = StockOut::create([
+                'date'      => $request->date,
+                'customer_id' => $request->customer_id,
+                'status'    => 'active',
+            ]);
 
-        $item = StockMaster::find($request->item_id);
+            // ✅ Save StockOut Items
+            if ($request->has('items') && count($request->items) > 0) {
+                foreach ($request->items as $item) {
+                    StockOutItem::create([
+                        'stock_out_id' => $stockOut->id, // corrected key
+                        'item_id'      => $item['item_id'],
+                        'qty'          => $item['qty'],
+                        'price'        => $item['rate'],
+                        'total'        => $item['total'],
+                    ]);
 
-        if ($item->qty < $request->qty) {
-            return back()->with('error', 'Not enough stock available!');
+                    // ✅ Decrease stock in the Item table
+                    $stockItem = Item::find($item['item_id']);
+                    if ($stockItem) {
+                        $stockItem->qty -= $item['qty']; // decrease stock
+                        if ($stockItem->qty < 0) {
+                            $stockItem->qty = 0; // prevent negative stock
+                        }
+                        $stockItem->save();
+                    }
+                }
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Stock Out saved successfully',
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 500);
         }
-
-        $stockOut = StockOut::create($request->all());
-
-        $item->qty -= $request->qty;
-        $item->save();
-
-        return redirect()->route('admin.stock-out.index')->with('success', 'Stock Out added successfully!');
     }
 
-    public function edit(StockOut $stockOut)
+    /**
+     * Update the status of a Stock In record.
+     *
+     * @param \Illuminate\Http\Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function status(Request $request)
     {
-        $items = StockMaster::all();
-        return view('admin.stock_out.edit', compact('stockOut', 'items'));
-    }
+        DB::beginTransaction(); // Start transaction
+        try {
+            // Find the StockIn record
+            $stockIn = StockOut::findOrFail($request->stockId);
 
-    public function update(Request $request, StockOut $stockOut)
-    {
-        $request->validate([
-            'item_id' => 'required|exists:stock_master,id',
-            'customer_name' => 'required|string|max:255',
-            'rate' => 'required|numeric|min:0',
-            'qty' => 'required|integer|min:1',
-        ]);
+            // Update status
+            $stockIn->status = $request->status;
+            $stockIn->save();
 
-        $item = StockMaster::find($request->item_id);
-        $oldQty = $stockOut->qty;
 
-        // restore old qty first
-        $item->qty += $oldQty;
+            $stockInItem = StockOutItem::where('stock_out_id',$request->stockId)->get();
 
-        if ($item->qty < $request->qty) {
-            return back()->with('error', 'Not enough stock available!');
+            // If status is 'completed' (or any status you want), reduce item quantities
+            if ($request->status == 'inactive') {
+                foreach ($stockInItem as $stockItem) {
+                    // Assuming you have a relation StockIn hasMany StockInItem as 'items'
+                    // and StockInItem has item_id and qty
+                    $item = Item::find($stockItem->item_id);
+                    if ($item) {
+                        // Reduce the qty
+                        $item->qty = $item->qty + $stockItem->qty;
+                        $item->save();
+                    }
+                }
+            }else{
+                foreach ($stockInItem as $stockItem) {
+                    // Assuming you have a relation StockIn hasMany StockInItem as 'items'
+                    // and StockInItem has item_id and qty
+                    $item = Item::find($stockItem->item_id);
+                    if ($item) {
+                        // Increase the qty
+                        $item->qty = $item->qty - $stockItem->qty;
+                        $item->save();
+                    }
+                }
+            }
+
+            DB::commit(); // Commit transaction
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Status updated successfully'
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack(); // Rollback on error
+            dd($e); // For debugging
+            return response()->json([
+                'success' => false,
+                'message' => 'Stock In record not found or error occurred'
+            ], 404);
         }
-
-        $stockOut->update($request->all());
-
-        $item->qty -= $request->qty;
-        $item->save();
-
-        return redirect()->route('admin.stock-out.index')->with('success', 'Stock Out updated successfully!');
     }
 
-    public function destroy(StockOut $stockOut)
+    /**
+     * Delete a Stock In record by its ID.
+     *
+     * @param int $id
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function destroy($id)
     {
-        $item = StockMaster::find($stockOut->item_id);
-        $item->qty += $stockOut->qty;
-        $item->save();
+        DB::beginTransaction(); // Start transaction
+        try {
+            
+            $stockIn = StockOut::findOrFail($id);
 
-        $stockOut->delete();
+            $stockInItem = StockOutItem::where('stock_out_id',$id)->get();
 
-        return redirect()->route('admin.stock-out.index')->with('success', 'Stock Out deleted successfully!');
+            // Loop through each related StockInItem
+            foreach ($stockInItem as $stockItem) {
+                $item = Item::find($stockItem->item_id);
+                if ($item) {
+                    // Reduce the quantity from the item
+                    $item->qty = $item->qty + $stockItem->qty;
+
+                    // Optional: prevent negative stock
+                    if ($item->qty < 0) {
+                        $item->qty = 0;
+                    }
+
+                    $item->save();
+                }
+            }
+
+            // Delete the StockIn record
+            $stockIn->delete();
+
+            DB::commit(); // Commit transaction
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Stock In record deleted and item quantities updated successfully'
+            ]);
+
+        } catch (\Exception $e) {
+            dd($e);
+            DB::rollBack(); // Rollback on error
+            return response()->json([
+                'success' => false,
+                'message' => 'Stock In record not found or error occurred'
+            ], 404);
+        }
     }
 }
