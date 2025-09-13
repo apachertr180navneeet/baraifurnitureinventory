@@ -25,4 +25,12 @@ class Item extends Model
     {
         return $this->belongsTo(Category::class);
     }
+
+    /**
+     * Get all manufacturing records for this item.
+     */
+    public function manufacturings()
+    {
+        return $this->hasMany(Manufacturing::class, 'item_id');
+    }
 }

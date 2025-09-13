@@ -153,25 +153,66 @@ class ItemController extends Controller
     {
         // Validation rules
         $rules = [
-            'name' => 'required|string|max:255|unique:items,name,' . $request->id,
+            'name'        => 'required|string|max:255|unique:items,name,' . $request->id,
+            'code'        => 'required|string|max:100|unique:items,code,' . $request->id,
+            'category_id' => 'required|integer|exists:categories,id',
+            'qty'         => 'required|numeric|min:0',
+            'price'       => 'required|numeric|min:0',
+            'image'       => 'nullable|image|mimes:jpeg,png,jpg,gif,svg|max:2048',
         ];
 
-        // Validate the request data
+        // Validate request
         $validator = Validator::make($request->all(), $rules);
 
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
-                'errors' => $validator->errors(),
+                'errors'  => $validator->errors(),
             ]);
         }
 
-        $user = Item::find($request->id);
-        if ($user) {
-            $user->update($request->all());
-            return response()->json(['success' => true , 'message' => 'Category Update Successfully']);
+        $item = Item::find($request->id);
+
+        if ($item) {
+            // If new image is uploaded
+            if ($request->hasFile('image')) {
+                $file     = $request->file('image');
+                $filename = time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
+                $path     = public_path('upload/items');
+
+                // Create folder if not exists
+                if (!file_exists($path)) {
+                    mkdir($path, 0777, true);
+                }
+
+                // Move file to public/upload/items
+                $file->move($path, $filename);
+
+                // Save full URL in DB
+                $fullUrl = asset('upload/items/' . $filename);
+                $item->image = $fullUrl;
+            }
+
+            // Update other fields
+            $item->name        = $request->name;
+            $item->code        = $request->code;
+            $item->category_id = $request->category_id;
+            $item->qty         = $request->qty;
+            $item->price       = $request->price;
+
+            $item->save();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Item Updated Successfully',
+                'data'    => $item, // contains full URL in DB
+            ]);
         }
 
-        return response()->json(['success' => false, 'message' => 'Category not found']);
+        return response()->json([
+            'success' => false,
+            'message' => 'Item not found',
+        ]);
     }
+
 }
