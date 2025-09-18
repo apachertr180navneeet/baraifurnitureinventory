@@ -10,10 +10,11 @@ use Tymon\JWTAuth\Exceptions\JWTException;
 use Mail,Hash,File,DB,Helper,Auth;
 use App\Models\Cart;
 use App\Models\Item;
-use App\Model\GenarateQuotation;
+use App\Models\GenarateQuotation;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Filesystem\Filesystem;
 use App\Models\SplashScreen;
+
 
 use PDF; // barryvdh/laravel-dompdf
 
@@ -142,8 +143,61 @@ class UserController extends Controller
     public function genarateQuotation(Request $request)
     {
         $user = auth()->user();
-        dd($user);
+        $cartItems = Cart::with('item')->where('user_id', $user->id)->get();
 
+        if ($cartItems->isEmpty()) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Cart is empty.'
+            ]);
+        }
+
+        $quotationRows = [];
+        $totalAmount = 0;
+
+        foreach ($cartItems as $cart) {
+            $amount = $cart->quantity * $cart->item->price;
+            $totalAmount += $amount;
+
+            $quotationRows[] = GenarateQuotation::create([
+                'user_id' => $user->id,
+                'item_id' => $cart->item_id,
+                'quantity' => $cart->quantity,
+                'status' => 1,
+                'amount' => $amount,
+            ]);
+        }
+
+        // Generate PDF
+        $pdf = PDF::loadView('quotations.pdf', [
+            'user' => $user,
+            'quotationRows' => $quotationRows,
+            'totalAmount' => $totalAmount,
+        ]);
+
+        $fileName = 'quotation_'.$user->id.'_'.time().'.pdf';
+        $uploadPath = public_path('uploads/quotations/');
+
+        // Make directory if not exists
+        if (!file_exists($uploadPath)) {
+            mkdir($uploadPath, 0777, true);
+        }
+
+        $fileFullPath = $uploadPath . $fileName;
+        $pdf->save($fileFullPath);
+
+        // Save PDF URL in each row
+        $pdfUrl = url('uploads/quotations/' . $fileName);
+        foreach ($quotationRows as $row) {
+            $row->pdf_url = $pdfUrl;
+            $row->save();
+        }
+
+        return response()->json([
+            'status' => true,
+            'message' => 'Quotation generated successfully.',
+            'pdf_url' => $pdfUrl,
+        ]);
     }
 
 
