@@ -554,17 +554,21 @@ class AuthController extends Controller
         $query = Item::with('category:id,name')
                     ->where('status', '1');
 
-        // Search by category_id (if passed)
+        // Filter by category_id (if provided)
         if ($request->filled('category_id')) {
             $query->where('category_id', $request->category_id);
         }
 
-        // Search by name (if passed)
+        // Filter by name (if provided)
         if ($request->filled('name')) {
             $query->where('name', 'like', '%' . $request->name . '%');
         }
 
-        $items = $query->get()->map(function ($item) {
+        // Use pagination instead of get()
+        $items = $query->paginate(10);
+
+        // Transform each item
+        $items->getCollection()->transform(function ($item) {
             $data = [
                 'id'            => $item->id,
                 'name'          => $item->name,
@@ -580,7 +584,7 @@ class AuthController extends Controller
                 'deleted_at'    => $item->deleted_at,
             ];
 
-            // null values को "" में convert
+            // Convert null values into empty string
             return collect($data)->map(function ($value) {
                 return $value ?? "";
             });
